@@ -59,3 +59,6 @@ A full-stack health dashboard demonstrating React, Node.js, and Agentic AI (MCP)
 - **Monorepo-style** structure for clarity.
 - **MCP Integration**: The Backend acts as the "Agent" client, calling the MCP server tools directly. This simplifies the frontend architecture and keeps the "Agentic" logic secure on the server side.
 - **Data Seeding**: Random data generation on startup for testing variability.
+  
+## Tools
+- Google Gemini Pro

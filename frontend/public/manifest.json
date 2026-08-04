@@ -1,0 +1,16 @@
+{
+    "name": "Mini Health Dashboard",
+    "short_name": "HealthDash",
+    "theme_color": "#2563eb",
+    "background_color": "#f8fafc",
+    "display": "standalone",
+    "scope": "/",
+    "start_url": "/",
+    "icons": [
+        {
+            "src": "/favicon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml"
+        }
+    ]
+}

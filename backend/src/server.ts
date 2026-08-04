@@ -3,7 +3,6 @@ import cors from 'cors';
 import { patients, biomarkers } from './data';
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { z } from "zod";
 import path from 'path';
 
 const app = express();
@@ -126,13 +125,11 @@ app.post('/api/patients/:id/analyze', async (req, res) => {
             ]
         };
 
-        // Fallback normalization because my Mock in server.ts previous version had specific structure
-        // The MCP tool returns { summary, concerns, potentialRisks }
-        // Frontend expects { summary, risks, recommendations }
+        // Fallback normalization
         const normalized = {
             summary: analysis.summary,
             risks: analysis.potentialRisks || [],
-            recommendations: [monitoringText, ...analysis.concerns] // Using concerns as recommendations for now
+            recommendations: [monitoringText, ...analysis.concerns]
         };
 
         res.json(normalized);
@@ -143,8 +140,13 @@ app.post('/api/patients/:id/analyze', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
-    // Start MCP Client
-    initMcpClient().catch(console.error);
-    console.log(`Backend server running on http://localhost:${PORT}`);
-});
+// Export app for testing
+export { app };
+
+if (process.env.NODE_ENV !== 'test') {
+    app.listen(PORT, () => {
+        // Start MCP Client
+        initMcpClient().catch(console.error);
+        console.log(`Backend server running on http://localhost:${PORT}`);
+    });
+}

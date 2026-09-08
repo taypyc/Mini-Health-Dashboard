@@ -1,64 +1,154 @@
 # Mini Health Dashboard with AI Analysis
 
-A full-stack health dashboard demonstrating React, Node.js, and Agentic AI (MCP) integration.
+A full-stack health dashboard demonstrating React, Node.js, and Agentic AI (Model Context Protocol / MCP) integration. Structured as an npm workspaces monorepo and configured for deployment with **Vercel Services**.
 
-## Features
-- **Patient Dashboard**: View patients and their specific biomarker data.
-- **AI Integration**: Uses the Model Context Protocol (MCP) to analyze biomarkers and suggest monitoring priorities.
-- **Live Updates**: Simulates real-time data changes in the UI.
+---
 
-## Architecture
-- **Backend**: Express.js + TypeScript.
-  - Acts as the API Gateway.
-  - Manages In-memory data store.
-  - Connects to the MCP Server via `StdioClientTransport`.
-- **MCP Server**: TypeScript + MCP SDK.
-  - Runs as a separate process spawned by the Backend.
-  - Provides `analyze_biomarkers` and `suggest_monitoring_priorities` tools.
-- **Frontend**: React + Vite + Tailwind CSS.
-  - Interactive UI with Recharts for visualization.
-  - Polls Backend for "Live Updates" simulation.
+## Architecture & Services
 
-## Setup & Run
+The project is structured into three distinct services:
+
+```text
+Mini-Health-Dashboard/
+├── frontend/     # React + Vite SPA (Client UI)
+├── backend/      # Express.js + TypeScript (API Gateway & MCP Client)
+├── mcp-server/   # Model Context Protocol Server (AI Biomarker Tools)
+├── vercel.json   # Vercel Services & Rewrites configuration
+└── package.json  # Root workspaces & unified scripts
+```
+
+### 1. Frontend Service (`frontend/`)
+- **Stack**: React 18, Vite, Tailwind CSS, Recharts, React Router.
+- **Role**: Interactive patient dashboard displaying vitals, metabolic, and cardiovascular biomarkers.
+- **Features**: Real-time metric simulation, charts, error boundaries (with `/503` service unavailable redirect), and automated code splitting (`manualChunks`).
+- **Networking**: Requests `/api` via Vite development proxy (in dev) or relative path rewritten directly to the backend service (on Vercel). Configured via `VITE_API_URL`.
+
+### 2. Backend Service (`backend/`)
+- **Stack**: Express.js, TypeScript, Vitest, Supertest.
+- **Role**: Secure API Gateway and data provider.
+- **Endpoints**:
+  - `GET /api/patients`: List all seeded patients.
+  - `GET /api/patients/:id`: Get detailed patient profile.
+  - `GET /api/patients/:id/biomarkers`: Query biomarkers by patient and category.
+  - `POST /api/patients/:id/analyze`: Triggers AI analysis via the MCP server.
+  - `GET /api/health`: Service health check.
+- **MCP Client**: Spawns and communicates with `mcp-server` via `StdioClientTransport` with linked `InMemoryTransport` fallback.
+
+### 3. MCP Server Service (`mcp-server/`)
+- **Stack**: TypeScript, `@modelcontextprotocol/sdk`, Zod.
+- **Role**: Dedicated Model Context Protocol server exposing AI tools:
+  - `analyze_biomarkers`: Evaluates metrics against clinical target ranges and flags potential health risks (cardiovascular, diabetes, cardiac alerts).
+  - `suggest_monitoring_priorities`: Computes deviations from reference bounds to recommend targeted biomarker monitoring priorities.
+- **Communication**: Runs on `stdio` transport, connected to the backend client.
+
+---
+
+## Deployment Configuration (Vercel Services)
+
+The project uses **Vercel Services** in `vercel.json` to build and deploy the polyglot monorepo atomically under a single deployment:
+
+```json
+{
+  "services": {
+    "frontend": {
+      "root": "frontend",
+      "framework": "vite"
+    },
+    "backend": {
+      "root": "backend"
+    },
+    "mcp-server": {
+      "root": "mcp-server"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api(/.*)?",
+      "destination": {
+        "type": "service",
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "type": "service",
+        "service": "frontend"
+      }
+    }
+  ]
+}
+```
+
+---
+
+## Getting Started
 
 ### Prerequisites
-- Node.js (v18+)
+- **Node.js** (v18+)
+- **npm** (v9+)
 
-### Steps
+### Installation
+Clone the repository and install all workspace dependencies from the root:
 
-1. **Build MCP Server**
-   ```bash
-   cd mcp-server
-   npm install
-   npx tsc
-   ```
+```bash
+git clone https://github.com/taypyc/Mini-Health-Dashboard.git
+cd Mini-Health-Dashboard
+npm install
+```
 
-2. **Start Backend**
-   ```bash
-   cd backend
-   npm install
-   npx ts-node src/server.ts or npm run start
-   ```
-   *Runs on http://localhost:3001*
+### Environment Variables
+Copy `.env.example` to `.env` (or configure in `frontend/.env`):
 
-3. **Start Frontend**
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
-   *Runs on http://localhost:5173* (or similar)
+```bash
+cp .env.example .env
+```
 
-## Usage
-1. Open the Frontend URL.
-2. Select a patient.
-3. Click **"Get AI Insights"** to trigger the MCP analysis.
-4. Toggle **"Live Updates"** to see values change in real-time.
+| Variable | Default | Description |
+|---|---|---|
+| `VITE_API_URL` | `/api` | Base URL for frontend API calls. Proxied to backend in development. |
+| `PORT` | `3001` | Local port for Express backend server. |
 
-## Design Decisions
-- **Monorepo-style** structure for clarity.
-- **MCP Integration**: The Backend acts as the "Agent" client, calling the MCP server tools directly. This simplifies the frontend architecture and keeps the "Agentic" logic secure on the server side.
-- **Data Seeding**: Random data generation on startup for testing variability.
-  
-## Tools
-- Google Gemini Pro
+---
+
+## Available Scripts
+
+Run from the root directory:
+
+### Development
+Start the MCP server build, backend API, and Vite frontend dev server concurrently:
+```bash
+npm run dev
+```
+- **Frontend**: `http://localhost:5173`
+- **Backend API**: `http://localhost:3001`
+
+### Production Build
+Builds all services in correct dependency sequence (`mcp-server` -> `backend` -> `frontend`):
+```bash
+npm run build
+```
+
+Individual service builds:
+- `npm run build:mcp`: Compiles `mcp-server/src` to `mcp-server/dist` via `tsc`.
+- `npm run build:backend`: Compiles `backend/src` to `backend/dist` via `tsc`.
+- `npm run build:frontend`: Compiles Vite React app to `frontend/dist`.
+
+### Running Tests
+Execute unit and integration tests across services:
+
+```bash
+# Run backend tests (Vitest + Supertest)
+npm test --prefix backend
+
+# Run frontend tests (Vitest + React Testing Library + JSDOM)
+npm test --prefix frontend
+```
+
+---
+
+## Usage Flow
+1. Open the frontend in your browser (`http://localhost:5173`).
+2. Select a patient from the patient directory.
+3. Click **"Get AI Insights"** to trigger the MCP biomarker analysis.
+4. Toggle **"Live Updates"** to simulate real-time patient biomarker fluctuation.

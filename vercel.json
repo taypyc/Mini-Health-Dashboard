@@ -5,12 +5,10 @@
       "framework": "vite"
     },
     "backend": {
-      "root": "backend",
-      "entrypoint": "src/server.ts"
+      "root": "backend"
     },
     "mcp-server": {
-      "root": "mcp-server",
-      "entrypoint": "src/index.ts"
+      "root": "mcp-server"
     }
   },
   "rewrites": [

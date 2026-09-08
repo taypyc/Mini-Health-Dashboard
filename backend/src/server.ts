@@ -4,9 +4,10 @@ import { patients, biomarkers } from './data';
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import path from 'path';
+import fs from 'fs';
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
@@ -14,34 +15,89 @@ app.use(express.json());
 // MCP Client Setup
 let mcpClient: Client | null = null;
 
+function getMcpServerPath(): string {
+    const candidates = [
+        path.resolve(process.cwd(), 'mcp-server/dist/index.js'),
+        path.resolve(process.cwd(), 'dist/index.js'),
+        path.resolve(__dirname, '../../mcp-server/dist/index.js'),
+        path.resolve(__dirname, '../mcp-server/dist/index.js'),
+        path.resolve(__dirname, '../../../mcp-server/dist/index.js')
+    ];
+
+    for (const p of candidates) {
+        if (fs.existsSync(p)) {
+            return p;
+        }
+    }
+    return candidates[0];
+}
+
 async function initMcpClient() {
     if (mcpClient) return mcpClient;
 
-    const transport = new StdioClientTransport({
-        command: "node",
-        args: [path.join(__dirname, '../../mcp-server/dist/index.js')]
-    });
+    const mcpPath = getMcpServerPath();
+    console.log(`[Backend] Initializing MCP Client with path: ${mcpPath}`);
 
-    const client = new Client({
-        name: "BackendClient",
-        version: "1.0.0",
-    }, {
-        capabilities: {}
-    });
+    try {
+        const transport = new StdioClientTransport({
+            command: "node",
+            args: [mcpPath]
+        });
 
-    await client.connect(transport);
-    mcpClient = client;
-    console.log("Connected to MCP Server");
-    return client;
+        const client = new Client({
+            name: "BackendClient",
+            version: "1.0.0",
+        }, {
+            capabilities: {}
+        });
+
+        await client.connect(transport);
+        mcpClient = client;
+        console.log("Connected to MCP Server via stdio");
+        return client;
+    } catch (stdioErr) {
+        console.warn("[Backend] Stdio transport failed, attempting in-memory fallback:", stdioErr);
+        try {
+            const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+            // @ts-ignore
+            const mcpModule = await import("../../mcp-server/src/index.js").catch(() => import("../../mcp-server/dist/index.js"));
+            const mcpServer = mcpModule.server || mcpModule.default;
+
+            const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+            await mcpServer.connect(serverTransport);
+
+            const client = new Client({
+                name: "BackendClient",
+                version: "1.0.0",
+            }, {
+                capabilities: {}
+            });
+
+            await client.connect(clientTransport);
+            mcpClient = client;
+            console.log("Connected to MCP Server via in-memory transport");
+            return client;
+        } catch (inMemErr) {
+            console.error("[Backend] In-memory MCP connection also failed:", inMemErr);
+            throw stdioErr;
+        }
+    }
 }
 
+const router = express.Router();
+
+// Health check
+router.get('/health', (req, res) => {
+    res.json({ status: 'ok', service: 'backend' });
+});
+
 // Get all patients
-app.get('/api/patients', (req, res) => {
+router.get('/patients', (req, res) => {
     res.json(patients);
 });
 
 // Get single patient
-app.get('/api/patients/:id', (req, res) => {
+router.get('/patients/:id', (req, res) => {
     const patient = patients.find(p => p.id === req.params.id);
     if (!patient) {
         return res.status(404).json({ error: 'Patient not found' });
@@ -50,7 +106,7 @@ app.get('/api/patients/:id', (req, res) => {
 });
 
 // Get biomarkers for a patient
-app.get('/api/patients/:id/biomarkers', (req, res) => {
+router.get('/patients/:id/biomarkers', (req, res) => {
     const { id } = req.params;
     const { category } = req.query;
 
@@ -64,7 +120,7 @@ app.get('/api/patients/:id/biomarkers', (req, res) => {
 });
 
 // Analyze using MCP
-app.post('/api/patients/:id/analyze', async (req, res) => {
+router.post('/patients/:id/analyze', async (req, res) => {
     const { id } = req.params;
     const patient = patients.find(p => p.id === id);
     const patientBiomarkers = biomarkers.filter(b => b.patientId === id);
@@ -116,16 +172,7 @@ app.post('/api/patients/:id/analyze', async (req, res) => {
         // @ts-ignore
         const monitoringText = monitoringResult.content[0].text;
 
-        // Merge results
-        const finalResponse = {
-            ...analysis,
-            recommendations: [
-                ...analysis.recommendations || [], // IF existing
-                monitoringText
-            ]
-        };
-
-        // Fallback normalization
+        // Normalized response
         const normalized = {
             summary: analysis.summary,
             risks: analysis.potentialRisks || [],
@@ -140,13 +187,17 @@ app.post('/api/patients/:id/analyze', async (req, res) => {
     }
 });
 
-// Export app for testing
-export { app };
+// Support both /api prefix and root router
+app.use('/api', router);
+app.use('/', router);
 
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
     app.listen(PORT, () => {
         // Start MCP Client
         initMcpClient().catch(console.error);
         console.log(`Backend server running on http://localhost:${PORT}`);
     });
 }
+
+export { app };
+export default app;
